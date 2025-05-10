@@ -35,8 +35,6 @@ global ReminderUpDown := ""
 
 global RemindersFile := A_ScriptDir "\reminders.ini"  ; Файл для сохранения настроек
 
-; global ActiveReminders := Map()  ; Хранит окна напоминаний (ключ - HWND, значение - позиция Y)
-
 ; Проверка существования файла настроек
 if (!FileExist(RemindersFile)) {
     MsgBox("Отсутствует файл настроек reminders.ini!", "Error", 16)
@@ -108,16 +106,17 @@ LoadFromIni(iniFile, section) {
 
     ; Для каждой строки получаем часть до знака =
     for section in sectionArray {
-        if (section = "")  ; Пропускаем пустые строки
+        section := Trim(section)
+        if (section = "" || SubStr(section, 1, 1) == ";")  ; Пропускаем пустые строки и комментарии
             continue
 
         ; Разделяем строку по первому знаку =
         parts := StrSplit(section, "=", "`"", 2)  ; Ограничиваем разделение на 2 части
 
-        key1 := Trim(parts[1])  ; Trim удаляет лишние пробелы
-        value1 := Trim(parts[2])  ; Trim удаляет лишние пробелы
+        key := Trim(parts[1])  ; Trim удаляет лишние пробелы
+        value := Trim(parts[2])  ; Trim удаляет лишние пробелы
         ; Получаем значение из INI
-        keys.Push({ key: key1, value: value1 })
+        keys.Push({ key: key, value: value })
     }
 
     return keys
