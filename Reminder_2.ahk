@@ -8,16 +8,12 @@ global ReminderGui := ""
 global ReminderDDL := ""
 
 ; Окно напоминаний
-global ReminderWindowW := 145
+global ReminderWindowW := 130
 global ReminderWindowH := 107
 
 ; Основное окно
 global ReminderW := 230
 global ReminderH := 32
-
-global NextWindowY := 130  ; Начальная позиция первого окна
-global WindowSpacing := 5  ; Отступ между окнами
-global AddSpace := NextWindowY - (ReminderWindowH + WindowSpacing)
 
 ; Глобальные переменные для плавного перемещения
 global targetY := 0
@@ -52,6 +48,21 @@ transparent := LoadFromIni(RemindersFile, "WinTransparent")
 
 ; Загружаем координаты главного окна напоминания из файла настроек
 coordMainWindow := LoadFromIni(RemindersFile, "CoordinatesMainWindow")
+
+; Загружаем координаты окна напоминания из файла настроек
+coordReminders := LoadFromIni(RemindersFile, "CoordinatesReminders")
+
+global NextWindowY := coordReminders[1].value  ; Начальная позиция первого окна
+global WindowSpacing := 5  ; Отступ между окнами
+global AddSpace := NextWindowY - (ReminderWindowH + WindowSpacing)
+
+; Загружаем настройки звука из файла настроек
+soundSettings := LoadFromIni(RemindersFile, "Sound")
+if (soundSettings.Length > 0) {
+    soundEnabled := soundSettings[1].value
+    yellowColor := soundSettings[2].value
+    yellowTime := soundSettings[3].value
+}
 
 ; Получаем массив имен
 names := []
@@ -180,6 +191,21 @@ SaveReminder(*) {
 
     minutes := ReminderEdit.Value
 
+    ; Рассчитываем позицию для нового окна
+    newYPos := NextWindowY
+    if (ActiveReminders.Length > 0) {
+        ; Берем позицию последнего окна и добавляем высоту + отступ
+        lastReminder := ActiveReminders[ActiveReminders.Length]
+        lastReminder.window.GetPos(, &lastY)
+        newYPos := lastY + ReminderWindowH + WindowSpacing
+    }
+
+    ; Проверяем, не выходим ли за пределы экрана
+    if (newYPos + ReminderWindowH > A_ScreenHeight) {
+        MsgBox("Достигнут конец экрана! Невозможно создать новое напоминание.", "Внимание", "Icon!")
+        return
+    }
+
     ; Создаем окно напоминания
     CreateReminderWindow(Choice, minutes)
 
@@ -206,9 +232,22 @@ CreateReminderWindow(title, minutes) {
     Text2 := ReminderWindow.Add("Text", "x5 y+5 w" ReminderWindowW - 10, "Создано: " CurrentTime)
     Text3 := ReminderWindow.Add("Text", "x5 y+5 w" ReminderWindowW - 10, "Сработает в: " TriggerTime)
 
+    ; ; Добавляем счетчик обратного времени
+    ; CountdownText := ReminderWindow.Add("Text", "x5 y+5 w" ReminderWindowW - 10, "Осталось: " minutes " мин 00 сек"
+    ; )
     ; Добавляем счетчик обратного времени
-    CountdownText := ReminderWindow.Add("Text", "x5 y+5 w" ReminderWindowW - 10, "Осталось: " minutes " мин 00 сек"
-    )
+    hours := minutes // 60
+    remainingMinutes := Mod(minutes, 60)
+
+    ; Форматируем строку в зависимости от количества часов
+    if (hours > 0) {
+        CountdownText := ReminderWindow.Add("Text", "x5 y+5 w" ReminderWindowW - 10,
+            ; "Осталось: " hours " час " Format("{:02}", remainingMinutes) " мин 00 сек")
+            "Осталось: " Format("{:02}", hours) ":" Format("{:02}", remainingMinutes) ":00")
+    } else {
+        CountdownText := ReminderWindow.Add("Text", "x5 y+5 w" ReminderWindowW - 10,
+            "Осталось: 00:" minutes ":00")
+    }
 
     BtnClose := ReminderWindow.Add("Button", "x5 y+5 w" ReminderWindowW - 10 " h20", "Close")
 
@@ -232,17 +271,51 @@ CreateReminderWindow(title, minutes) {
         if (remainingSeconds <= 0) {
             CountdownText.Text := "Время вышло!"
             ReminderWindow.BackColor := "00FF00"  ; Меняем цвет на зеленый
+
+            ; Проигрываем звуковое оповещение, если звук включен
+            if (soundEnabled = 1) {
+                ; PlayAlertSound()  ; Используем функцию для воспроизведения звука
+                ; Для предупреждения используем стандартный звук
+                SoundPlay("*-1")
+            }
+
             SetTimer(UpdateCountdown, 0)  ; Останавливаем таймер
             return
         }
 
-        mins := remainingSeconds // 60
-        secs := Mod(remainingSeconds, 60)
-        CountdownText.Text := "Осталось: " mins " мин " Format("{:02}", secs) " сек"
+        ; Оповещение за 10 секунд до конца (если включено)
+        if (yellowColor = 1 && remainingSeconds == yellowTime) {
+            ReminderWindow.BackColor := "FFFF00"  ; Желтый цвет фона
+
+            if (soundEnabled = 1) {
+                try {
+                    ; Для предупреждения используем стандартный звук
+                    ; SoundPlay("*-1")
+                    SoundPlay("*16")
+                } catch as e {
+                    MsgBox("Не удалось воспроизвести звук: " e.Message, "Ошибка", "Icon!")
+                }
+            }
+        }
+
+        ; Обновляем текст счетчика
+        hours := remainingSeconds // 3600
+        remainingAfterHours := remainingSeconds - (hours * 3600)
+        mins := remainingAfterHours // 60
+        secs := Mod(remainingAfterHours, 60)
+
+        ; Форматируем строку в зависимости от количества часов
+        if (hours > 0) {
+            CountdownText.Text := "Осталось: " Format("{:02}", hours) ":" Format("{:02}", mins) ":" Format("{:02}",
+                secs)
+        } else {
+            CountdownText.Text := "Осталось: 00:" Format("{:02}", mins) ":" Format("{:02}", secs)
+        }
     }
 
     ; Обработчик кнопки закрытия (останавливаем таймер)
     BtnClose.OnEvent("Click", CloseReminderWindow)
+
     CloseReminderWindow(*) {
         SetTimer(UpdateCountdown, 0)
 
@@ -344,3 +417,28 @@ AnimateWindowMovement(removedIndex) {
         }
     }
 }
+
+; ; Функция для воспроизведения звукового оповещения
+; PlayAlertSound() {
+;     customSound := A_ScriptDir "\sound\alert.wav"
+
+;     ; Проверяем существование пользовательского звука
+;     if (FileExist(customSound)) {
+;         try {
+;             ; SoundPlay(customSound, "Wait")
+;             SoundPlay("*16")
+;             ; SoundPlay("*64")
+;             return
+;         } catch as e {
+;             ; В случае ошибки используем стандартный звук
+;             MsgBox("Не удалось воспроизвести пользовательский звук: " e.Message, "Ошибка", "Icon!")
+;         }
+;     }
+
+;     ; Если пользовательский звук не найден или произошла ошибка
+;     try {
+;         SoundPlay("*-1", "Wait")  ; Стандартный системный звук
+;     } catch as e {
+;         MsgBox("Не удалось воспроизвести системный звук: " e.Message, "Ошибка", "Icon!")
+;     }
+; }
